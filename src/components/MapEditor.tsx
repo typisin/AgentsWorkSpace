@@ -1,22 +1,107 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { type VectorMapData, type Point2D } from '../types/map';
-import { PlusSquare, Lightbulb, Bot, Monitor, Armchair, Trash2 } from 'lucide-react';
+import { type VectorMapData, type Point2D, type MapObject } from '../types/map';
+import { PlusSquare, Lightbulb, Bot, Monitor, Armchair, Trash2, DoorOpen } from 'lucide-react';
 
 interface MapEditorProps {
   mapData: VectorMapData;
   onChange: (newMap: VectorMapData) => void;
 }
 
+type DraggableObjectType = MapObject['type'];
+
 const SCALE = 20; // 1 meter = 20 pixels in SVG
 const OFFSET_X = 150; // Center offset
 const OFFSET_Y = 150;
 
+function isObjectDraggable(_type: MapObject['type']): _type is DraggableObjectType {
+  return true; // All objects are draggable in editor
+}
+
+const MIN_EDGE_LENGTH = 0.5;
+const MIN_POLYGON_AREA = 1;
+
+function snapPoint(p: Point2D): Point2D {
+  return {
+    x: Math.round(p.x * 2) / 2,
+    y: Math.round(p.y * 2) / 2
+  };
+}
+
+function orientation(a: Point2D, b: Point2D, c: Point2D): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function onSegment(a: Point2D, b: Point2D, c: Point2D): boolean {
+  return (
+    Math.min(a.x, c.x) <= b.x &&
+    b.x <= Math.max(a.x, c.x) &&
+    Math.min(a.y, c.y) <= b.y &&
+    b.y <= Math.max(a.y, c.y)
+  );
+}
+
+function segmentsIntersect(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): boolean {
+  const o1 = orientation(p1, p2, p3);
+  const o2 = orientation(p1, p2, p4);
+  const o3 = orientation(p3, p4, p1);
+  const o4 = orientation(p3, p4, p2);
+
+  if (o1 * o2 < 0 && o3 * o4 < 0) return true;
+  if (o1 === 0 && onSegment(p1, p3, p2)) return true;
+  if (o2 === 0 && onSegment(p1, p4, p2)) return true;
+  if (o3 === 0 && onSegment(p3, p1, p4)) return true;
+  if (o4 === 0 && onSegment(p3, p2, p4)) return true;
+  return false;
+}
+
+function polygonArea(polygon: Point2D[]): number {
+  let area = 0;
+  for (let i = 0; i < polygon.length; i++) {
+    const current = polygon[i];
+    const next = polygon[(i + 1) % polygon.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(area) / 2;
+}
+
+function hasSelfIntersection(polygon: Point2D[]): boolean {
+  const len = polygon.length;
+  for (let i = 0; i < len; i++) {
+    const a1 = polygon[i];
+    const a2 = polygon[(i + 1) % len];
+    for (let j = i + 1; j < len; j++) {
+      const b1 = polygon[j];
+      const b2 = polygon[(j + 1) % len];
+      const sharesVertex =
+        i === j ||
+        (i + 1) % len === j ||
+        i === (j + 1) % len;
+      if (sharesVertex) continue;
+      if (segmentsIntersect(a1, a2, b1, b2)) return true;
+    }
+  }
+  return false;
+}
+
+function isPolygonAdjustable(polygon: Point2D[]): boolean {
+  if (polygon.length < 3) return false;
+  for (let i = 0; i < polygon.length; i++) {
+    const p1 = polygon[i];
+    const p2 = polygon[(i + 1) % polygon.length];
+    if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < MIN_EDGE_LENGTH) return false;
+  }
+  if (polygonArea(polygon) < MIN_POLYGON_AREA) return false;
+  if (hasSelfIntersection(polygon)) return false;
+  return true;
+}
+
 export function MapEditor({ mapData, onChange }: MapEditorProps) {
   const [draggingVertex, setDraggingVertex] = useState<{ roomId: string, index: number } | null>(null);
-  const [draggingObject, setDraggingObject] = useState<string | null>(null);
-  const [draggingRoom, setDraggingRoom] = useState<{ roomId: string, startPos: Point2D } | null>(null);
+  const [draggingObject, setDraggingObject] = useState<{ id: string, offset: Point2D } | null>(null);
+  const [draggingRoom, setDraggingRoom] = useState<{ roomId: string, startPos: Point2D, originalPolygon: Point2D[] } | null>(null);
   const [draggingEdge, setDraggingEdge] = useState<{ roomId: string, edgeIndex: number, startPos: Point2D } | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Convert world coordinates to SVG coordinates
@@ -35,19 +120,37 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
 
   const applyDragAtPoint = useCallback((worldPt: Point2D) => {
     if (draggingVertex) {
+      let changed = false;
       const newRooms = mapData.rooms.map(room => {
-        if (room.id === draggingVertex.roomId) {
-          const newPolygon = [...room.polygon];
-          newPolygon[draggingVertex.index] = worldPt;
-          return { ...room, polygon: newPolygon };
+        if (room.id !== draggingVertex.roomId) return room;
+        const snappedPoint = snapPoint(worldPt);
+        if (
+          room.polygon[draggingVertex.index].x === snappedPoint.x &&
+          room.polygon[draggingVertex.index].y === snappedPoint.y
+        ) {
+          return room;
         }
-        return room;
+        const newPolygon = [...room.polygon];
+        newPolygon[draggingVertex.index] = snappedPoint;
+        if (!isPolygonAdjustable(newPolygon)) return room;
+        changed = true;
+        return { ...room, polygon: newPolygon };
       });
-      onChange({ ...mapData, rooms: newRooms });
+      if (changed) {
+        onChange({ ...mapData, rooms: newRooms });
+      }
     } else if (draggingObject) {
+      const nextPosition = {
+        x: worldPt.x + draggingObject.offset.x,
+        y: worldPt.y + draggingObject.offset.y
+      };
+      const targetObject = mapData.objects.find(obj => obj.id === draggingObject.id);
+      if (!targetObject) return;
+      if (targetObject.position.x === nextPosition.x && targetObject.position.y === nextPosition.y) return;
+
       const newObjects = mapData.objects.map(obj => {
-        if (obj.id === draggingObject) {
-          return { ...obj, position: worldPt };
+        if (obj.id === draggingObject.id) {
+          return { ...obj, position: nextPosition };
         }
         return obj;
       });
@@ -70,44 +173,43 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
 
       // Keep grid snapping behavior and avoid jitter
       if (Math.abs(moveDistance) >= 0.5) {
+        let changed = false;
         const newRooms = mapData.rooms.map(room => {
-          if (room.id === draggingEdge.roomId) {
-            const newPolygon = room.polygon.map((p, index) => {
-              if (index === i || index === j) {
-                return {
-                  x: p.x + normal.x * moveDistance,
-                  y: p.y + normal.y * moveDistance
-                };
-              }
-              return p;
-            });
-            return { ...room, polygon: newPolygon };
-          }
-          return room;
+          if (room.id !== draggingEdge.roomId) return room;
+          const candidatePolygon = room.polygon.map((p, index) => {
+            if (index === i || index === j) {
+              return snapPoint({
+                x: p.x + normal.x * moveDistance,
+                y: p.y + normal.y * moveDistance
+              });
+            }
+            return p;
+          });
+          if (!isPolygonAdjustable(candidatePolygon)) return room;
+          changed = true;
+          return { ...room, polygon: candidatePolygon };
         });
-        onChange({ ...mapData, rooms: newRooms });
-        setDraggingEdge({ roomId: draggingEdge.roomId, edgeIndex: draggingEdge.edgeIndex, startPos: worldPt });
+        if (changed) {
+          onChange({ ...mapData, rooms: newRooms });
+          setDraggingEdge({ roomId: draggingEdge.roomId, edgeIndex: draggingEdge.edgeIndex, startPos: snapPoint(worldPt) });
+        }
       }
     } else if (draggingRoom) {
-      // Handle moving the entire room
       const dx = worldPt.x - draggingRoom.startPos.x;
       const dy = worldPt.y - draggingRoom.startPos.y;
-      
-      // Only update if moved by at least grid size to avoid jitter
-      if (Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) {
-        const newRooms = mapData.rooms.map(room => {
-          if (room.id === draggingRoom.roomId) {
-            const newPolygon = room.polygon.map(p => ({
-              x: p.x + dx,
-              y: p.y + dy
-            }));
-            return { ...room, polygon: newPolygon };
-          }
-          return room;
-        });
-        onChange({ ...mapData, rooms: newRooms });
-        setDraggingRoom({ roomId: draggingRoom.roomId, startPos: worldPt });
-      }
+      if (dx === 0 && dy === 0) return;
+
+      const newRooms = mapData.rooms.map(room => {
+        if (room.id === draggingRoom.roomId) {
+          const newPolygon = draggingRoom.originalPolygon.map(p => ({
+            x: p.x + dx,
+            y: p.y + dy
+          }));
+          return { ...room, polygon: newPolygon };
+        }
+        return room;
+      });
+      onChange({ ...mapData, rooms: newRooms });
     }
   }, [draggingVertex, draggingObject, draggingEdge, draggingRoom, mapData, onChange]);
 
@@ -117,6 +219,35 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
     setDraggingRoom(null);
     setDraggingEdge(null);
   };
+
+  const deleteSelected = useCallback(() => {
+    if (selectedRoomId) {
+      onChange({
+        ...mapData,
+        rooms: mapData.rooms.filter(r => r.id !== selectedRoomId)
+      });
+      setSelectedRoomId(null);
+    } else if (selectedObjectId) {
+      onChange({
+        ...mapData,
+        objects: mapData.objects.filter(o => o.id !== selectedObjectId)
+      });
+      setSelectedObjectId(null);
+    }
+  }, [selectedRoomId, selectedObjectId, mapData, onChange]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Only delete if no input/textarea is focused
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          deleteSelected();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedRoomId, selectedObjectId, mapData, deleteSelected]);
 
   useEffect(() => {
     if (!draggingVertex && !draggingObject && !draggingRoom && !draggingEdge) return;
@@ -149,6 +280,11 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
     clearDragging();
   };
 
+  const deselectAll = () => {
+    setSelectedRoomId(null);
+    setSelectedObjectId(null);
+  };
+
   const addRoom = () => {
     const newId = `room-${Date.now()}`;
     const newRoom = {
@@ -167,7 +303,7 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
     setSelectedRoomId(newId);
   };
 
-  const addObject = (type: 'light' | 'robot' | 'desk' | 'chair') => {
+  const addObject = (type: 'light' | 'robot' | 'desk' | 'chair' | 'door') => {
     const newObj = {
       id: `${type}-${Date.now()}`,
       type,
@@ -176,20 +312,10 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
     onChange({ ...mapData, objects: [...mapData.objects, newObj] });
   };
 
-  const deleteSelected = () => {
-    if (selectedRoomId) {
-      onChange({
-        ...mapData,
-        rooms: mapData.rooms.filter(r => r.id !== selectedRoomId)
-      });
-      setSelectedRoomId(null);
-    }
-  };
-
   return (
     <div 
-      onPointerDownCapture={(e) => e.stopPropagation()}
-      onWheelCapture={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
       style={{
         position: 'absolute',
         bottom: 20,
@@ -208,8 +334,8 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 'bold', color: '#333' }}>Blueprint Editor</h3>
-        {selectedRoomId && (
-          <button onClick={deleteSelected} title="Delete Selected Room" style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: 4 }}>
+        {(selectedRoomId || selectedObjectId) && (
+          <button onClick={deleteSelected} title="Delete Selected" style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: 4 }}>
             <Trash2 size={16} />
           </button>
         )}
@@ -223,6 +349,7 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
         <button onClick={() => addObject('robot')} title="Add Robot" style={toolbarBtnStyle}><Bot size={18} color="#ff3333" /></button>
         <button onClick={() => addObject('desk')} title="Add Desk" style={toolbarBtnStyle}><Monitor size={18} color="#444" /></button>
         <button onClick={() => addObject('chair')} title="Add Chair" style={toolbarBtnStyle}><Armchair size={18} color="#666" /></button>
+        <button onClick={() => addObject('door')} title="Add Door" style={toolbarBtnStyle}><DoorOpen size={18} color="#8b4513" /></button>
       </div>
 
       <svg
@@ -232,7 +359,7 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
         style={{ border: '1px solid #e0e0e0', borderRadius: 8, background: '#f8f9fa', touchAction: 'none' }}
         onPointerUp={handlePointerUp}
         onClick={(e) => {
-          if (e.target === svgRef.current) setSelectedRoomId(null);
+          if (e.target === svgRef.current) deselectAll();
         }}
       >
         {/* Draw Rooms */}
@@ -262,9 +389,11 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
                   e.stopPropagation();
                   (e.currentTarget as Element).setPointerCapture(e.pointerId);
                   setSelectedRoomId(room.id);
-                  setDraggingRoom({ 
-                    roomId: room.id, 
-                    startPos: toWorld(e.clientX, e.clientY) 
+                  setSelectedObjectId(null);
+                  setDraggingRoom({
+                    roomId: room.id,
+                    startPos: toWorld(e.clientX, e.clientY),
+                    originalPolygon: room.polygon.map(p => ({ ...p }))
                   });
                 }}
               />
@@ -350,20 +479,39 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
           if (obj.type === 'robot') { icon = 'R'; color = '#ff3333'; }
           if (obj.type === 'desk') { icon = 'D'; color = '#444444'; }
           if (obj.type === 'chair') { icon = 'C'; color = '#666666'; }
+          if (obj.type === 'door') { icon = '🚪'; color = '#8b4513'; }
+
+          const isSelected = selectedObjectId === obj.id;
 
           return (
             <g 
               key={obj.id} 
               transform={`translate(${sp.x}, ${sp.y})`}
-              style={{ cursor: 'move', pointerEvents: 'all' }}
+              style={{ cursor: isObjectDraggable(obj.type) ? 'move' : 'not-allowed', pointerEvents: 'all' }}
               onPointerDown={(e) => {
                 e.stopPropagation();
+                setSelectedObjectId(obj.id);
+                setSelectedRoomId(null);
+                if (!isObjectDraggable(obj.type)) return;
                 (e.currentTarget as Element).setPointerCapture(e.pointerId);
-                setDraggingObject(obj.id);
+                const startWorld = toWorld(e.clientX, e.clientY);
+                setDraggingObject({
+                  id: obj.id,
+                  offset: {
+                    x: obj.position.x - startWorld.x,
+                    y: obj.position.y - startWorld.y
+                  }
+                });
               }}
             >
-              <circle r={10} fill="white" stroke={color} strokeWidth={2} />
-              <text x={0} y={3} textAnchor="middle" fill={color} fontSize={10} fontWeight="bold" pointerEvents="none">
+              <circle 
+                r={10} 
+                fill="white" 
+                stroke={isSelected ? "#3388ff" : color} 
+                strokeWidth={isSelected ? 3 : 2} 
+                style={isSelected ? { filter: 'drop-shadow(0 0 2px rgba(51, 136, 255, 0.5))' } : {}}
+              />
+              <text x={0} y={3} textAnchor="middle" fill={isSelected ? "#3388ff" : color} fontSize={10} fontWeight="bold" pointerEvents="none">
                 {icon}
               </text>
             </g>
@@ -371,7 +519,7 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
         })}
       </svg>
       <p style={{ margin: 0, fontSize: 11, color: '#888', textAlign: 'center' }}>
-        Click room to select. Drag inside to move, drag corners to resize.
+        Click room to select. Drag inside to move, drag corners or edges to reshape.
       </p>
     </div>
   );

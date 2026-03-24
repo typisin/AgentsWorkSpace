@@ -12,8 +12,11 @@ interface SceneProps {
 }
 
 export function Scene({ darkMode, mapData }: SceneProps) {
-  const { wallColor } = useControls('Environment', {
-    wallColor: '#ffffff'
+  const { wallColor, wallOpacity, floorColor, floorOpacity } = useControls('Environment', {
+    wallColor: '#ffffff',
+    wallOpacity: { value: 0.25, min: 0, max: 1, step: 0.05 },
+    floorColor: darkMode ? '#151515' : '#ffffff',
+    floorOpacity: { value: 1.0, min: 0, max: 1, step: 0.05 },
   })
 
   // 解析对象数据
@@ -25,8 +28,8 @@ export function Scene({ darkMode, mapData }: SceneProps) {
   return (
     <group>
       {/* 房间基座 */}
-      <Floor darkMode={darkMode} mapData={mapData} />
-      <Walls color={wallColor} mapData={mapData} />
+      <Floor darkMode={darkMode} mapData={mapData} color={floorColor} opacity={floorOpacity} />
+      <Walls color={wallColor} opacity={wallOpacity} mapData={mapData} />
 
       {/* 智能灯具 */}
       {lights.map(light => (

@@ -8,12 +8,26 @@ interface RobotProps {
   mapData?: VectorMapData
 }
 
-// Math helper for line segment intersection
-function lineSegmentsIntersect(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D) {
-  const ccw = (A: Point2D, B: Point2D, C: Point2D) => {
-    return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+// Math helper for line segment intersection point
+function getIntersectionPoint(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): Point2D | null {
+  const x1 = p1.x, y1 = p1.y;
+  const x2 = p2.x, y2 = p2.y;
+  const x3 = p3.x, y3 = p3.y;
+  const x4 = p4.x, y4 = p4.y;
+
+  const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+  if (denom === 0) return null;
+
+  const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+  const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+
+  if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+    return {
+      x: x1 + ua * (x2 - x1),
+      y: y1 + ua * (y2 - y1)
+    };
   }
-  return (ccw(p1, p3, p4) !== ccw(p2, p3, p4)) && (ccw(p1, p2, p3) !== ccw(p1, p2, p4));
+  return null;
 }
 
 export function Robot({ position, mapData }: RobotProps) {
@@ -44,9 +58,23 @@ export function Robot({ position, mapData }: RobotProps) {
       for (let i = 0; i < pts.length; i++) {
         const p1 = pts[i];
         const p2 = pts[(i + 1) % pts.length];
-        if (lineSegmentsIntersect(currentPos, nextPos, p1, p2)) {
-          isObstacle = true;
-          break;
+        const intersect = getIntersectionPoint(currentPos, nextPos, p1, p2);
+        
+        if (intersect) {
+          // Check if there is a door at this intersection point
+          const isAtDoor = mapData.objects.some(obj => {
+            if (obj.type !== 'door') return false;
+            const dist = Math.sqrt(
+              Math.pow(obj.position.x - intersect.x, 2) + 
+              Math.pow(obj.position.y - intersect.y, 2)
+            );
+            return dist < 0.6; // Door threshold (radius 0.6m)
+          });
+
+          if (!isAtDoor) {
+            isObstacle = true;
+            break;
+          }
         }
       }
       if (isObstacle) break;

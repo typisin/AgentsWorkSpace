@@ -1,5 +1,5 @@
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, Environment, ContactShadows } from '@react-three/drei'
+import { OrbitControls, Environment } from '@react-three/drei'
 import { Suspense, useState } from 'react'
 import { Scene } from './components/Scene'
 import { MapEditor } from './components/MapEditor'

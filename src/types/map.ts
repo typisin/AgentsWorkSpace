@@ -13,7 +13,7 @@ export interface Room {
 
 export interface MapObject {
   id: string;
-  type: 'light' | 'robot' | 'desk' | 'chair';
+  type: 'light' | 'robot' | 'desk' | 'chair' | 'door';
   position: Point2D;
 }
 
