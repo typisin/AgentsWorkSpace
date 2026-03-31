@@ -115,7 +115,7 @@ function App() {
       {/* 2D 矢量地图编辑器 */}
       <MapEditor mapData={mapData} onChange={setMapData} darkMode={darkMode} />
 
-      <Canvas shadows camera={{ position: [0, 15, 12], fov: 40 }}>
+      <Canvas shadows camera={{ position: [0, 15, 12], fov: 40 }} gl={{ preserveDrawingBuffer: true, antialias: true }}>
         <color attach="background" args={[darkMode ? '#0a0a0a' : '#f0f2f5']} />
         <fog attach="fog" args={[darkMode ? '#0a0a0a' : '#f0f2f5', 20, 60]} />
         
