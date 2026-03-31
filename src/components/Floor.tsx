@@ -38,8 +38,8 @@ function FloorMesh({ shape, color, opacity }: FloorMeshProps) {
         color={color}
         transparent={opacity < 1}
         opacity={opacity}
-        roughness={0.8}
-        metalness={0.2}
+        roughness={0.15}
+        metalness={0.3}
         side={DoubleSide}
         depthTest
         depthWrite={opacity >= 1}

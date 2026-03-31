@@ -5,6 +5,7 @@ import { PlusSquare, Lightbulb, Bot, Monitor, Armchair, Trash2, DoorOpen } from 
 interface MapEditorProps {
   mapData: VectorMapData;
   onChange: (newMap: VectorMapData) => void;
+  darkMode?: boolean;
 }
 
 type DraggableObjectType = MapObject['type'];
@@ -95,7 +96,7 @@ function isPolygonAdjustable(polygon: Point2D[]): boolean {
   return true;
 }
 
-export function MapEditor({ mapData, onChange }: MapEditorProps) {
+export function MapEditor({ mapData, onChange, darkMode = false }: MapEditorProps) {
   const [draggingVertex, setDraggingVertex] = useState<{ roomId: string, index: number } | null>(null);
   const [draggingObject, setDraggingObject] = useState<{ id: string, offset: Point2D } | null>(null);
   const [draggingRoom, setDraggingRoom] = useState<{ roomId: string, startPos: Point2D, originalPolygon: Point2D[] } | null>(null);
@@ -312,51 +313,75 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
     onChange({ ...mapData, objects: [...mapData.objects, newObj] });
   };
 
+  const glassStyle = {
+    background: darkMode ? 'var(--glass-bg-dark)' : 'var(--glass-bg-light)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    border: `1px solid ${darkMode ? 'var(--glass-border-dark)' : 'var(--glass-border-light)'}`,
+    boxShadow: 'var(--glass-shadow)',
+  };
+
+  const getBtnStyle = () => ({
+    background: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '8px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: darkMode ? '#fff' : '#333',
+    transition: 'all 0.2s ease',
+  });
+
   return (
     <div 
       onPointerDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
       style={{
         position: 'absolute',
-        bottom: 20,
-        left: 20,
-        background: 'rgba(255, 255, 255, 0.95)',
-        backdropFilter: 'blur(10px)',
-        padding: 16,
-        borderRadius: 12,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+        bottom: 24,
+        left: 24,
+        ...glassStyle,
+        padding: '20px',
+        borderRadius: '20px',
         zIndex: 100,
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
-        border: '1px solid rgba(0,0,0,0.05)'
+        gap: '16px',
+        transition: 'all 0.5s ease',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 'bold', color: '#333' }}>Blueprint Editor</h3>
+        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: darkMode ? '#fff' : '#111', letterSpacing: '0.5px' }}>Blueprint Editor</h3>
         {(selectedRoomId || selectedObjectId) && (
-          <button onClick={deleteSelected} title="Delete Selected" style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', padding: 4 }}>
-            <Trash2 size={16} />
+          <button onClick={deleteSelected} title="Delete Selected" style={{ ...getBtnStyle(), padding: '6px', color: '#ff4444', background: 'transparent' }}>
+            <Trash2 size={18} />
           </button>
         )}
       </div>
       
       {/* Toolbar */}
-      <div style={{ display: 'flex', gap: 8, paddingBottom: 8, borderBottom: '1px solid #eee' }}>
-        <button onClick={addRoom} title="Add Room" style={toolbarBtnStyle}><PlusSquare size={18} /></button>
-        <div style={{ width: 1, background: '#eee', margin: '0 4px' }} />
-        <button onClick={() => addObject('light')} title="Add Light" style={toolbarBtnStyle}><Lightbulb size={18} color="#ffaa00" /></button>
-        <button onClick={() => addObject('robot')} title="Add Robot" style={toolbarBtnStyle}><Bot size={18} color="#ff3333" /></button>
-        <button onClick={() => addObject('desk')} title="Add Desk" style={toolbarBtnStyle}><Monitor size={18} color="#444" /></button>
-        <button onClick={() => addObject('chair')} title="Add Chair" style={toolbarBtnStyle}><Armchair size={18} color="#666" /></button>
-        <button onClick={() => addObject('door')} title="Add Door" style={toolbarBtnStyle}><DoorOpen size={18} color="#8b4513" /></button>
+      <div style={{ display: 'flex', gap: '8px', paddingBottom: '12px', borderBottom: `1px solid ${darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
+        <button onClick={addRoom} title="Add Room" style={getBtnStyle()}><PlusSquare size={18} /></button>
+        <div style={{ width: '1px', background: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', margin: '0 4px' }} />
+        <button onClick={() => addObject('light')} title="Add Light" style={getBtnStyle()}><Lightbulb size={18} color={darkMode ? '#ffdd66' : '#ffaa00'} /></button>
+        <button onClick={() => addObject('robot')} title="Add Robot" style={getBtnStyle()}><Bot size={18} color={darkMode ? '#ff6666' : '#ff3333'} /></button>
+        <button onClick={() => addObject('desk')} title="Add Desk" style={getBtnStyle()}><Monitor size={18} color={darkMode ? '#aaaaaa' : '#444444'} /></button>
+        <button onClick={() => addObject('chair')} title="Add Chair" style={getBtnStyle()}><Armchair size={18} color={darkMode ? '#cccccc' : '#666666'} /></button>
+        <button onClick={() => addObject('door')} title="Add Door" style={getBtnStyle()}><DoorOpen size={18} color={darkMode ? '#d2a679' : '#8b4513'} /></button>
       </div>
 
       <svg
         ref={svgRef}
         width={300}
         height={300}
-        style={{ border: '1px solid #e0e0e0', borderRadius: 8, background: '#f8f9fa', touchAction: 'none' }}
+        style={{ 
+          border: `1px solid ${darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`, 
+          borderRadius: '12px', 
+          background: darkMode ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)', 
+          touchAction: 'none' 
+        }}
         onPointerUp={handlePointerUp}
         onClick={(e) => {
           if (e.target === svgRef.current) deselectAll();
@@ -518,20 +543,9 @@ export function MapEditor({ mapData, onChange }: MapEditorProps) {
           );
         })}
       </svg>
-      <p style={{ margin: 0, fontSize: 11, color: '#888', textAlign: 'center' }}>
+      <p style={{ margin: 0, fontSize: '11px', color: darkMode ? 'rgba(255,255,255,0.5)' : '#888', textAlign: 'center', fontWeight: 500 }}>
         Click room to select. Drag inside to move, drag corners or edges to reshape.
       </p>
     </div>
   );
 }
-
-const toolbarBtnStyle = {
-  background: '#f0f0f0',
-  border: '1px solid #ddd',
-  borderRadius: 6,
-  padding: '6px 8px',
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center'
-};

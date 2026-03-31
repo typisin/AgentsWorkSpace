@@ -13,11 +13,11 @@ interface SceneProps {
 
 export function Scene({ darkMode, mapData }: SceneProps) {
   const { wallColor, wallOpacity, floorColor, floorOpacity } = useControls('Environment', {
-    wallColor: '#ffffff',
-    wallOpacity: { value: 0.25, min: 0, max: 1, step: 0.05 },
-    floorColor: darkMode ? '#151515' : '#ffffff',
-    floorOpacity: { value: 1.0, min: 0, max: 1, step: 0.05 },
-  })
+    wallColor: darkMode ? '#333333' : '#ffffff',
+    wallOpacity: { value: 0.35, min: 0, max: 1, step: 0.05 },
+    floorColor: darkMode ? '#1a1a1a' : '#f0f0f0',
+    floorOpacity: { value: 0.95, min: 0, max: 1, step: 0.05 },
+  }, [darkMode])
 
   // 解析对象数据
   const lights = mapData.objects.filter(obj => obj.type === 'light');
